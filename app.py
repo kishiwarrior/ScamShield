@@ -15,6 +15,7 @@ except ImportError:  # Keep the safety tools importable when optional setup is i
     genai = None
 
 MODEL = os.getenv("MODEL", "gemini-3.8-flash")
+GEMINI_API_KEY_SETTING = "GEMINI_API_KEY"
 MAX_REDIRECTS = 5
 REQUEST_TIMEOUT = 5
 
@@ -205,9 +206,9 @@ If verdict is not SAFE, call draft_complaint and show the draft. Never invent fa
 def _get_gemini_client():
     if genai is None:
         raise RuntimeError("Google GenAI SDK is missing. Install dependencies from requirements.txt.")
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv(GEMINI_API_KEY_SETTING)
     try:
-        api_key = api_key or st.secrets.get("GEMINI_API_KEY")
+        api_key = api_key or st.secrets.get(GEMINI_API_KEY_SETTING)
     except Exception:
         pass
     if not api_key:

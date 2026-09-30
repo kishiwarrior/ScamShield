@@ -28,11 +28,12 @@ Requires Python 3.10 or newer and a Gemini API key. The Gemini Developer API cur
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-$env:GEMINI_API_KEY = "replace-with-your-gemini-api-key"
+Copy-Item .streamlit\secrets.toml.example .streamlit\secrets.toml
+# Put your key in the ignored .streamlit/secrets.toml file.
 streamlit run app.py
 ```
 
-On macOS/Linux, activate with `source .venv/bin/activate` and set the key with `export GEMINI_API_KEY=...`.
+Streamlit reads `GEMINI_API_KEY` from `.streamlit/secrets.toml`. The app also accepts the same setting from the `GEMINI_API_KEY` environment variable. The real secrets file is ignored by Git; only the placeholder example is tracked.
 
 The model can be changed with `MODEL`; the default is `gemini-3.8-flash`. Gemini interactions use `store=False` so the app does not request server-side interaction storage. The free tier still processes submitted message content, and provider terms may permit use of free-tier data to improve products; use synthetic/sample messages for demos and never paste sensitive personal information. The VirusTotal lookup is optional. Set `VIRUSTOTAL_API_KEY` to enable it; with no key the tool returns a clear unavailable result and the rest of the investigation continues. Only a hostname is sent to VirusTotal, not the full message or URL. Check VirusTotal's current API terms and quotas before use.
 
@@ -40,7 +41,7 @@ The model can be changed with `MODEL`; the default is `gemini-3.8-flash`. Gemini
 
 1. Push this project to a GitHub repository.
 2. Create a Community Cloud app pointing to `app.py`.
-3. In the app's **Settings > Secrets**, set `GEMINI_API_KEY` to your Gemini key. Optionally set `VIRUSTOTAL_API_KEY` to enable domain reputation checks.
+3. In the app's **Settings > Secrets**, define `GEMINI_API_KEY`. Optionally define `VIRUSTOTAL_API_KEY` to enable domain reputation checks.
 
 4. Deploy. Never commit `.env` or Streamlit secrets files.
 
