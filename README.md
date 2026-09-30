@@ -14,7 +14,7 @@ Message -> Gemini function-calling loop (maximum 8 rounds)
   -> analyze_url: domain signals and manually checked redirect chain
   -> check_upi_id: handle and naming signals
   -> check_domain_reputation: optional VirusTotal hostname lookup
-  -> Claude weighs the evidence and returns verdict, risk score, reasons, and actions
+  -> Gemini weighs the evidence and returns verdict, risk score, reasons, and actions
   -> SCAM/SUSPICIOUS: draft_complaint creates editable reporting text
 ```
 
@@ -40,13 +40,7 @@ The model can be changed with `MODEL`; the default is `gemini-3.8-flash`. Gemini
 
 1. Push this project to a GitHub repository.
 2. Create a Community Cloud app pointing to `app.py`.
-3. In the app's **Settings > Secrets**, add:
-
-   ```toml
-  GEMINI_API_KEY = "replace-with-your-gemini-api-key"
-   # Optional:
-   VIRUSTOTAL_API_KEY = "your-virustotal-api-key"
-   ```
+3. In the app's **Settings > Secrets**, set `GEMINI_API_KEY` to your Gemini key. Optionally set `VIRUSTOTAL_API_KEY` to enable domain reputation checks.
 
 4. Deploy. Never commit `.env` or Streamlit secrets files.
 
