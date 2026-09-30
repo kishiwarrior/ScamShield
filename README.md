@@ -24,14 +24,13 @@ Tool calls and their results are shown in the Streamlit investigation panel. Eve
 
 Requires Python 3.10 or newer and a Gemini API key. The Gemini Developer API currently offers a free tier for eligible models; rate limits and model availability can change.
 
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-Copy-Item .streamlit\secrets.toml.example .streamlit\secrets.toml
-# Put your key in the ignored .streamlit/secrets.toml file.
-streamlit run app.py
-```
+### Team Quick Start (Windows)
+
+1. Clone the repo: `git clone https://github.com/kishiwarrior/ScamShieldCodo-sapiens.git`
+2. Enter the project: `cd ScamShieldCodo-sapiens`
+3. Set up dependencies: `python -m venv .venv; .\.venv\Scripts\Activate.ps1; python -m pip install -r requirements.txt`
+4. Run `Copy-Item .streamlit\secrets.toml.example .streamlit\secrets.toml`, add your own `GEMINI_API_KEY` to it, and never commit it.
+5. Start ScamShield: `streamlit run app.py`
 
 Streamlit reads `GEMINI_API_KEY` from `.streamlit/secrets.toml`. The app also accepts the same setting from the `GEMINI_API_KEY` environment variable. The real secrets file is ignored by Git; only the placeholder example is tracked.
 
