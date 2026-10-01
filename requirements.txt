@@ -3,3 +3,7 @@ google-genai
 requests
 fastapi
 uvicorn
+httpx
+pillow
+opencv-python-headless
+numpy

@@ -1,4 +1,4 @@
-"""ScamShield: an explainable scam investigation agent for Indian users."""
+import concurrent.futures
 import html
 import json
 import os
@@ -27,6 +27,7 @@ from engine import (
     draft_complaint,
     evaluate_heuristic,
     investigate,
+    investigate_image,
     _parse_report,
     _get_gemini_client,
 )
@@ -53,11 +54,20 @@ def run_agent(user_text: str, ui):
             if not function_calls:
                 return interaction.output_text
 
-            for call in function_calls:
+            def _execute_tool_call(call):
                 try:
                     out = TOOL_FUNCS[call.name](**call.arguments)
                 except Exception as exc:
                     out = {"error": f"Tool could not complete ({type(exc).__name__})"}
+                return call, out
+
+            if len(function_calls) == 1:
+                call_results = [_execute_tool_call(function_calls[0])]
+            else:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(function_calls), 8)) as executor:
+                    call_results = list(executor.map(_execute_tool_call, function_calls))
+
+            for call, out in call_results:
                 if hasattr(ui, "write"):
                     ui.write(f"Tool: **{call.name}**")
                 if hasattr(ui, "json"):
@@ -337,47 +347,162 @@ def render_ui():
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("<p style='font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #94a3b8; margin-bottom: 8px;'>💡 Quick Load Sample Scenarios</p>", unsafe_allow_html=True)
+    # ── Input Tabs ──────────────────────────────────────────────────────────────
+    tab_text, tab_image = st.tabs(["📝 Text / SMS / URL", "🖼️ Image & QR Code Scan"])
 
-    samples = {
-        "🚨 Fake KYC SMS": "Dear customer, your SBI account will be blocked today. Update KYC immediately: http://sbi-kyc-update.xyz/login",
-        "💸 UPI Refund Scam": "Hi, I am sending your refund of Rs. 4,999. Please approve the collect request from refund.support8834@okybl and enter your UPI PIN.",
-        "⚡ Electricity Cutoff": "URGENT: Your electricity connection will be DISCONNECTED tonight at 9:30 PM due to unpaid bill of Rs. 1,450. Call executive at +919876543210 or pay at http://bijli-bill-update.xyz/pay",
-        "✅ Legitimate Alert": "Dear SBI Customer, your A/C ending with 4821 has been debited by INR 350.00 on 01-Oct-26 via UPI. Ref No 427819382104. If not done by you, visit https://www.sbi.co.in or call 18001234. Never share your OTP, UPI PIN, or CVV.",
-    }
+    with tab_text:
+        st.markdown(
+            "<p style='font-size: 0.82rem; font-weight: 700; text-transform: uppercase;"
+            " letter-spacing: 0.06em; color: #94a3b8; margin-bottom: 8px;'>💡 Quick Load Sample Scenarios</p>",
+            unsafe_allow_html=True
+        )
 
-    cols = st.columns(len(samples))
-    for c, (name, txt) in zip(cols, samples.items()):
-        if c.button(name, key=f"sample_{name}", use_container_width=True):
-            st.session_state["msg"] = txt
+        samples = {
+            "🚨 Fake KYC SMS": "Dear customer, your SBI account will be blocked today. Update KYC immediately: http://sbi-kyc-update.xyz/login",
+            "💸 UPI Refund Scam": "Hi, I am sending your refund of Rs. 4,999. Please approve the collect request from refund.support8834@okybl and enter your UPI PIN.",
+            "⚡ Electricity Cutoff": "URGENT: Your electricity connection will be DISCONNECTED tonight at 9:30 PM due to unpaid bill of Rs. 1,450. Call executive at +919876543210 or pay at http://bijli-bill-update.xyz/pay",
+            "✅ Legitimate Alert": "Dear SBI Customer, your A/C ending with 4821 has been debited by INR 350.00 on 01-Oct-26 via UPI. Ref No 427819382104. If not done by you, visit https://www.sbi.co.in or call 18001234. Never share your OTP, UPI PIN, or CVV.",
+        }
 
-    msg = st.text_area(
-        "Paste Suspicious Message, URL, or UPI Request",
-        key="msg",
-        height=150,
-        placeholder="Paste suspicious text here (e.g. SMS, WhatsApp message, Telegram task, or payment link). Never paste OTPs or UPI PINs."
-    )
+        cols = st.columns(len(samples))
+        for c, (name, txt) in zip(cols, samples.items()):
+            if c.button(name, key=f"sample_{name}", use_container_width=True):
+                st.session_state["msg"] = txt
 
-    st.markdown(
-        "<div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 0.8rem; color: #64748b;'>"
-        "<span>🔒 Stateless Gemini requests; provider data policies still apply. Avoid sensitive details.</span>"
-        "<span>🛡️ Heuristic Resilience & AI Defense</span>"
-        "</div>",
-        unsafe_allow_html=True
-    )
+        msg = st.text_area(
+            "Paste Suspicious Message, URL, or UPI Request",
+            key="msg",
+            height=150,
+            placeholder="Paste suspicious text here (e.g. SMS, WhatsApp message, Telegram task, or payment link). Never paste OTPs or UPI PINs."
+        )
 
-    investigate_clicked = st.button("⚡ Run Threat Investigation", type="primary", use_container_width=True)
+        st.markdown(
+            "<div style='display: flex; justify-content: space-between; align-items: center;"
+            " margin-bottom: 12px; font-size: 0.8rem; color: #64748b;'>"
+            "<span>🔒 Stateless Gemini requests; provider data policies still apply. Avoid sensitive details.</span>"
+            "<span>🛡️ Heuristic Resilience & AI Defense</span>"
+            "</div>",
+            unsafe_allow_html=True
+        )
 
-    if investigate_clicked and msg.strip():
-        with st.status("Agent is investigating indicators...", expanded=True) as status:
-            try:
-                answer = run_agent(msg, st)
-                status.update(label="✓ Investigation Completed", state="complete")
-                error_msg = None
-            except Exception as exc:
-                answer = str(exc)
-                error_msg = answer
-                status.update(label="✕ Investigation Encountered An Error", state="error")
+        text_investigate_clicked = st.button(
+            "⚡ Run Threat Investigation", type="primary",
+            use_container_width=True, key="btn_text_investigate"
+        )
+
+        if text_investigate_clicked:
+            if msg.strip():
+                with st.status("Agent is investigating indicators...", expanded=True) as status:
+                    try:
+                        answer = run_agent(msg, st)
+                        status.update(label="✓ Investigation Completed", state="complete")
+                        st.session_state["_ss_result"] = {
+                            "answer": answer, "source": msg,
+                            "mode": "text", "error": None
+                        }
+                    except Exception as exc:
+                        status.update(label="✕ Investigation Encountered An Error", state="error")
+                        st.session_state["_ss_result"] = {
+                            "answer": str(exc), "source": msg,
+                            "mode": "text", "error": str(exc)
+                        }
+            else:
+                st.warning("Please paste a message or select a sample scenario first.")
+
+    with tab_image:
+        st.markdown("""
+        <div style='padding: 12px 0 6px 0;'>
+            <p style='font-size: 0.82rem; font-weight: 700; text-transform: uppercase;
+                      letter-spacing: 0.06em; color: #94a3b8; margin-bottom: 4px;'>
+                🖼️ Upload Suspicious Image or QR Code
+            </p>
+            <p style='font-size: 0.82rem; color: #64748b; margin-bottom: 14px;'>
+                Upload a screenshot of a suspicious payment page, message, WhatsApp forward, or any QR code.
+                ScamShield will decode QR codes, extract text using Gemini Vision, and run a full threat investigation.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        uploaded_file = st.file_uploader(
+            "Drop image here or click to browse",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="image_uploader",
+            label_visibility="collapsed"
+        )
+
+        if uploaded_file:
+            col_prev, col_info = st.columns([1, 1])
+            with col_prev:
+                st.image(uploaded_file, caption=f"Preview: {uploaded_file.name}", use_container_width=True)
+            with col_info:
+                st.markdown(f"""
+                <div class="ss-section-box" style="margin-top: 0;">
+                    <div class="ss-section-title">🔬 Scan will perform</div>
+                    <div style="color: #e2e8f0; font-size: 0.86rem; line-height: 2;">
+                        <div>🔲 <strong>QR Code Detection</strong> — decode embedded UPI or URLs</div>
+                        <div>🔤 <strong>Gemini Vision OCR</strong> — extract all visible text</div>
+                        <div>🕵️ <strong>Threat Analysis</strong> — full AI investigation pipeline</div>
+                        <div>📝 <strong>Complaint Draft</strong> — ready for cybercrime.gov.in</div>
+                    </div>
+                    <div style="margin-top: 10px; padding: 8px 10px; background: rgba(245,158,11,0.08);
+                                border: 1px solid rgba(245,158,11,0.25); border-radius: 8px;
+                                color: #fde68a; font-size: 0.78rem;">
+                        ⚠️ <strong>File:</strong> {uploaded_file.name} &nbsp;|&nbsp;
+                        <strong>Size:</strong> {uploaded_file.size // 1024} KB
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div style="border: 2px dashed rgba(16,185,129,0.3); border-radius: 12px;
+                        padding: 36px 24px; text-align: center; color: #4b5563;
+                        background: rgba(16,185,129,0.04); margin-bottom: 12px;">
+                <div style="font-size: 2.5rem; margin-bottom: 8px;">🖼️</div>
+                <div style="font-size: 0.9rem; color: #94a3b8;">
+                    Drag & drop a screenshot or QR code image above
+                </div>
+                <div style="font-size: 0.78rem; color: #4b5563; margin-top: 4px;">
+                    Supports PNG, JPG, JPEG, WebP
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        image_investigate_clicked = st.button(
+            "🔍 Scan Image for Threats", type="primary",
+            use_container_width=True, key="btn_image_investigate",
+            disabled=(uploaded_file is None)
+        )
+
+        if image_investigate_clicked and uploaded_file:
+            image_bytes = uploaded_file.getvalue()
+            mime = uploaded_file.type or "image/png"
+            with st.status("Scanning image — decoding QR codes & running threat analysis...", expanded=True) as status:
+                try:
+                    result = investigate_image(image_bytes, mime, ui=st)
+                    status.update(label="✓ Image Scan Completed", state="complete")
+                    st.session_state["_ss_result"] = {
+                        "answer": result.get("raw_text", ""),
+                        "source": f"Image upload: {uploaded_file.name}",
+                        "mode": "image",
+                        "error": None,
+                        "parsed_direct": result,
+                    }
+                except Exception as exc:
+                    status.update(label="✕ Image Scan Failed", state="error")
+                    st.session_state["_ss_result"] = {
+                        "answer": str(exc), "source": uploaded_file.name,
+                        "mode": "image", "error": str(exc)
+                    }
+
+    # ── Shared Results Section ──────────────────────────────────────────────────
+    if "_ss_result" in st.session_state:
+        result_data = st.session_state["_ss_result"]
+        error_msg = result_data.get("error")
+        answer = result_data.get("answer", "")
+        mode = result_data.get("mode", "text")
+        source_msg = result_data.get("source", "")
+
+        st.markdown("<div style='height: 18px'></div>", unsafe_allow_html=True)
 
         if error_msg:
             error_html = html.escape(str(error_msg))
@@ -388,7 +513,46 @@ def render_ui():
             </div>
             """, unsafe_allow_html=True)
         else:
-            parsed = _parse_report(answer)
+            # Use pre-parsed result for image mode, or parse raw text for text mode
+            if "parsed_direct" in result_data:
+                pd_raw = result_data["parsed_direct"]
+                parsed = {
+                    "verdict": pd_raw.get("verdict", "SAFE"),
+                    "risk_score": pd_raw.get("risk_score", 0),
+                    "why": pd_raw.get("why", []),
+                    "actions": pd_raw.get("actions", []),
+                    "complaint": pd_raw.get("complaint", ""),
+                }
+                qr_info = pd_raw.get("qr_info", {})
+                img_transcription = pd_raw.get("image_transcription", "")
+            else:
+                parsed = _parse_report(answer)
+                qr_info = {}
+                img_transcription = ""
+
+            # If image mode: show QR / OCR summary cards before the verdict
+            if mode == "image":
+                if qr_info.get("found"):
+                    qr_raw = html.escape(str(qr_info.get("raw", "")))
+                    qr_summary = html.escape(str(qr_info.get("summary", "")))
+                    st.markdown(f"""
+                    <div class="ss-section-box" style="border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.06);">
+                        <div class="ss-section-title" style="color: #93c5fd;">🔲 QR Code Decoded</div>
+                        <div style="color: #e2e8f0; font-size: 0.86rem; margin-bottom: 6px;">{qr_summary}</div>
+                        <code style="font-size: 0.78rem; color: #7dd3fc; word-break: break-all;">{qr_raw}</code>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div style="font-size: 0.82rem; color: #64748b; margin-bottom: 8px;">
+                        🔲 No QR code detected in image — analysis based on visual text extraction.
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                if img_transcription:
+                    with st.expander("📄 Gemini Vision — Extracted Image Text"):
+                        st.text(img_transcription)
+
             verdict = parsed["verdict"]
             score = parsed["risk_score"]
 
@@ -405,6 +569,7 @@ def render_ui():
                 verdict_badge = "<span style='background: #10b981; color: white; padding: 4px 12px; border-radius: 6px; font-weight: 800; font-size: 0.85rem;'>🛡️ LOW RISK / NO STRONG SIGNALS</span>"
                 bar_color = "#10b981"
 
+            mode_label = "🖼️ Image Scan" if mode == "image" else "📝 Text Analysis"
             st.markdown(f"""
             <div class="ss-verdict-card {card_class}">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -416,6 +581,7 @@ def render_ui():
                 <div class="ss-score-bar-bg">
                     <div class="ss-score-bar-fill" style="width: {score}%; background: {bar_color};"></div>
                 </div>
+                <div style="font-size: 0.75rem; color: #64748b; margin-top: 6px;">{mode_label}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -447,8 +613,8 @@ def render_ui():
                 if not complaint_text:
                     complaint_text = draft_complaint(
                         scam_type="Online Phishing / Fraud",
-                        summary=f"Suspicious message investigated: {msg[:120]}...",
-                        evidence="; ".join(parsed["why"][:3]),
+                        summary=f"Suspicious {'image' if mode == 'image' else 'message'} investigated: {source_msg[:120]}",
+                        evidence="; ".join([str(w) for w in parsed["why"][:3]]),
                         amount_lost="None"
                     )
 
@@ -477,10 +643,7 @@ def render_ui():
                 """, unsafe_allow_html=True)
 
             with st.expander("🔍 View Raw Agent Output & Tool Telemetry"):
-                st.markdown(answer)
-
-    elif investigate_clicked:
-        st.warning("Please paste a message or select a sample scenario first.")
+                st.markdown(answer or "_(No raw output available for this mode)_")
 
 
 # Only run UI automatically if executed directly by Streamlit runner
