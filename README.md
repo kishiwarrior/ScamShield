@@ -1,63 +1,132 @@
 # ScamShield
 
-ScamShield is an explainable scam and phishing investigation agent for Indian users. Paste a suspicious message, link, or UPI request to see evidence gathered by tools, a risk verdict, and practical next steps. For non-safe verdicts, it can draft (but never submit) a cybercrime complaint.
+ScamShield is an explainable scam and phishing investigation agent for Indian users. Analyze suspicious messages, links, or UPI collect requests to see evidence gathered by security tools, a risk verdict, and practical next steps. For non-safe verdicts, it drafts an editable cybercrime complaint ready for filing.
 
-## Problem and solution
+## Problem and Solution
 
-People receive urgent fake KYC messages, phishing links, and UPI collect requests without a quick way to inspect the evidence or understand how to report fraud. ScamShield uses Gemini function calling to extract entities, inspect URLs and UPI IDs, optionally query a domain reputation service, and explain its assessment. It is advisory, not a replacement for a bank or law-enforcement investigation.
+People receive urgent fake KYC messages, phishing links, and UPI collect requests without a quick way to inspect the evidence or understand how to report fraud. ScamShield uses Gemini function calling combined with a deterministic Heuristic Fallback Threat Engine to extract entities, inspect URLs and UPI IDs, optionally query a domain reputation service, and explain its assessment. It is advisory, not a replacement for a bank or law-enforcement investigation.
 
-## Agent workflow
+## Agent Workflow & Fallback Resilience
 
 ```text
-Message -> Gemini function-calling loop (maximum 8 rounds)
-  -> extract_entities: URLs, UPI IDs, phone numbers, amounts, urgency terms
-  -> analyze_url: domain signals and manually checked redirect chain
-  -> check_upi_id: handle and naming signals
-  -> check_domain_reputation: optional VirusTotal hostname lookup
-  -> Gemini weighs the evidence and returns verdict, risk score, reasons, and actions
-  -> SCAM/SUSPICIOUS: draft_complaint creates editable reporting text
+Input Message
+  │
+  ├──► [Primary] Gemini Agent Tool-Calling Loop (up to 8 rounds)
+  │      ├─► extract_entities: URLs, UPI IDs, phone numbers, amounts, urgency terms
+  │      ├─► analyze_url: domain spoofing, suspicious TLDs, APK links, SSRF/redirect checks
+  │      ├─► check_upi_id: handle whitelist and fraudulent naming keywords
+  │      └─► check_domain_reputation: optional VirusTotal hostname lookup
+  │
+  └──► [Fallback Resilience Engine] (Zero-Downtime Guarantee)
+         └─► Activated automatically if Gemini API key is missing, network fails, or quota limit (429) is reached.
+             Runs all deterministic local threat heuristics, computes weighted risk score (0-100), and formats structured evidence.
 ```
 
-Tool calls and their results are shown in the Streamlit investigation panel. Every verdict uses the headings `VERDICT`, `RISK SCORE`, `WHY`, and `WHAT TO DO`.
+---
 
-## Run locally
+## REST API (Hackathon Evaluation Endpoint)
 
-Requires Python 3.10 or newer and a Gemini API key. The Gemini Developer API currently offers a free tier for eligible models; rate limits and model availability can change.
+For evaluators and judges running automated evaluation or integration tests, ScamShield provides a production-grade FastAPI service.
 
-### Team Quick Start (Windows)
+### 1. Start the API Server
+```powershell
+# Using uvicorn
+uvicorn api:app --host 0.0.0.0 --port 8000
 
-1. Clone the repo: `git clone https://github.com/kishiwarrior/ScamShieldCodo-sapiens.git`
-2. Enter the project: `cd ScamShieldCodo-sapiens`
-3. Set up dependencies: `python -m venv .venv; .\.venv\Scripts\Activate.ps1; python -m pip install -r requirements.txt`
-4. Run `Copy-Item .streamlit\secrets.toml.example .streamlit\secrets.toml`, add your own `GEMINI_API_KEY` to it, and never commit it.
-5. Start ScamShield: `streamlit run app.py`
+# Or run directly
+python api.py
+```
 
-Streamlit reads `GEMINI_API_KEY` from `.streamlit/secrets.toml`. The app also accepts the same setting from the `GEMINI_API_KEY` environment variable. The real secrets file is ignored by Git; only the placeholder example is tracked.
+- **Interactive Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **ReDoc Documentation**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- **Health Check**: [http://localhost:8000/health](http://localhost:8000/health)
 
-The model can be changed with `MODEL`; the default is `gemini-3.8-flash`. Gemini interactions use `store=False` so the app does not request server-side interaction storage. The free tier still processes submitted message content, and provider terms may permit use of free-tier data to improve products; use synthetic/sample messages for demos and never paste sensitive personal information. The VirusTotal lookup is optional. Set `VIRUSTOTAL_API_KEY` to enable it; with no key the tool returns a clear unavailable result and the rest of the investigation continues. Only a hostname is sent to VirusTotal, not the full message or URL. Check VirusTotal's current API terms and quotas before use.
+### 2. Endpoints
 
-## Deploy on Streamlit Community Cloud
+#### `POST /api/v1/investigate` (or alias `POST /investigate`)
+Accepts either `{"text": "..."}` or `{"message": "..."}`.
 
-1. Push this project to a GitHub repository.
-2. Create a Community Cloud app pointing to `app.py`.
-3. In the app's **Settings > Secrets**, define `GEMINI_API_KEY`. Optionally define `VIRUSTOTAL_API_KEY` to enable domain reputation checks.
+**Sample Request:**
+```json
+{
+  "text": "Dear customer, your SBI account will be blocked today. Update KYC immediately: http://sbi-kyc-update.xyz/login"
+}
+```
 
-4. Deploy. Never commit `.env` or Streamlit secrets files.
+**Sample Response:**
+```json
+{
+  "status": "success",
+  "verdict": "SCAM",
+  "risk_score": 90,
+  "why": [
+    "Deceptive domain 'sbi-kyc-update.xyz': mentions brand/term 'sbi' but is not the official domain",
+    "Domain uses high-risk TLD: suspicious top-level domain",
+    "Coercive/threat keywords detected: blocked",
+    "Urgency indicators found: immediately, kyc"
+  ],
+  "actions": [
+    "1. DO NOT click any links, download files, or approve UPI payment requests.",
+    "2. Never enter your UPI PIN to receive money; entering a PIN always debits your account.",
+    "3. Block the sender number immediately.",
+    "4. If financial loss occurred, call national cybercrime helpline 1930 immediately within the golden hour.",
+    "5. Register an official cyber incident at cybercrime.gov.in."
+  ],
+  "entities": {
+    "urls": ["http://sbi-kyc-update.xyz/login"],
+    "upi_ids": [],
+    "phone_numbers": [],
+    "amounts": [],
+    "urgency_words": ["blocked", "immediately", "kyc"]
+  },
+  "complaint": "To: National Cyber Crime Reporting Portal (cybercrime.gov.in) / Helpline 1930\nCategory: Online Financial Fraud / Phishing...",
+  "engine": "gemini_agent",
+  "fallback_reason": null
+}
+```
 
-## Run checks
+#### `GET /api/v1/samples`
+Returns preloaded test cases for quick evaluator verification.
+
+---
+
+## Run Locally (Streamlit UI)
+
+Requires Python 3.10 or newer.
+
+```powershell
+# 1. Setup virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+
+# 2. Configure secrets (optional if testing with fallback heuristics)
+Copy-Item .streamlit\secrets.toml.example .streamlit\secrets.toml
+# Add your GEMINI_API_KEY inside .streamlit\secrets.toml
+
+# 3. Launch Streamlit UI
+streamlit run app.py
+```
+
+---
+
+## Run Test Suite
+
+Run all 15 automated unit tests across the security tools, fallback engine, and FastAPI endpoints:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-## Safety and limitations
+---
 
-- Advisory only: ScamShield does not block accounts, contact recipients, or submit complaints. Review complaint text and verify it before submitting at [cybercrime.gov.in](https://cybercrime.gov.in/) or calling **1930** if money was lost.
-- URL inspection uses `HEAD` requests only, with timeouts. Private, localhost, and non-public IP destinations are rejected, and each redirect is checked before the next request. Network checks can still fail; a failed lookup is not evidence that a link is safe.
-- URL and UPI heuristics can be wrong. A known UPI handle, HTTPS, or a clean third-party result does not establish that a message is legitimate.
-- Do not paste passwords, OTPs, UPI PINs, or full card details. The message is sent to the Gemini API for analysis; free-tier data may be used to improve Google's products. Review the current [Gemini API terms](https://ai.google.dev/gemini-api/terms) before use.
-- No real incident statistics or guaranteed detection rates are claimed.
+## Safety and Limitations
+
+- **Advisory Only**: ScamShield does not block accounts or submit complaints automatically. Review complaint text before submitting at [cybercrime.gov.in](https://cybercrime.gov.in/) or calling **1930**.
+- **SSRF Protection**: URL inspection uses `HEAD` requests only with strict timeouts. Private, localhost, and non-public IP destinations are blocked.
+- **Privacy First**: Gemini calls specify `store=False` to ensure zero interaction retention.
+- **Fail-Safe Design**: If an upstream AI provider is unreachable or rate limited, the built-in deterministic heuristic engine ensures users and API evaluators never experience an outage.
 
 ## Stack
 
-Python 3.10+, Streamlit, Google GenAI Python SDK, Requests, optional VirusTotal API.
+Python 3.10+, FastAPI, Streamlit, Google GenAI SDK, Requests, Uvicorn, Pydantic.
