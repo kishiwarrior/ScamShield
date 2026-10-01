@@ -1,11 +1,11 @@
 """ScamShield REST API (FastAPI) for Hackathon Evaluation."""
 import logging
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
-from engine import investigate, MODEL
+from engine import investigate, investigate_image, MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +151,57 @@ def investigate_endpoint(req: InvestigationRequest):
 @app.post("/investigate", response_model=InvestigationResponse, include_in_schema=False)
 def investigate_alias(req: InvestigationRequest):
     return investigate_endpoint(req)
+
+
+@app.post(
+    "/api/v1/investigate/image",
+    response_model=InvestigationResponse,
+    summary="Investigate Suspicious Image or QR Code",
+    tags=["Investigation"]
+)
+async def investigate_image_endpoint(file: UploadFile = File(...)):
+    """
+    Image & QR Code Threat Investigation Endpoint:
+    - Upload a PNG, JPG, JPEG, or WebP image (screenshot, QR code, etc.).
+    - Decodes any QR code (UPI payment QR, phishing URLs).
+    - Runs Gemini Vision OCR to extract and analyze visible text.
+    - Returns the same structured verdict as the text endpoint.
+    """
+    allowed_types = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+    mime_type = file.content_type or "image/png"
+    if mime_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported file type '{mime_type}'. Upload a PNG, JPG, or WebP image."
+        )
+    try:
+        image_bytes = await file.read()
+        if len(image_bytes) > 10 * 1024 * 1024:  # 10 MB limit
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Image too large. Maximum allowed size is 10 MB."
+            )
+        result = investigate_image(image_bytes, mime_type=mime_type)
+        return {
+            "status": "success",
+            "verdict": result["verdict"],
+            "risk_score": result["risk_score"],
+            "why": result.get("why", []),
+            "actions": result.get("actions", []),
+            "entities": result.get("entities", {}),
+            "complaint": result.get("complaint"),
+            "engine": result.get("engine", "unknown"),
+            "fallback_reason": result.get("fallback_reason"),
+            "raw_text": result.get("raw_text")
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Image investigation endpoint failed (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Image investigation failed. Please retry."
+        )
 
 
 if __name__ == "__main__":
