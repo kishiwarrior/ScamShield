@@ -1,4 +1,5 @@
 """ScamShield: an explainable scam investigation agent for Indian users."""
+import html
 import json
 import os
 import socket
@@ -359,7 +360,7 @@ def render_ui():
 
     st.markdown(
         "<div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 0.8rem; color: #64748b;'>"
-        "<span>🔒 <strong>Zero-Retention Guarantee:</strong> Processed with store=False. No personal logs stored.</span>"
+        "<span>🔒 Stateless Gemini requests; provider data policies still apply. Avoid sensitive details.</span>"
         "<span>🛡️ Heuristic Resilience & AI Defense</span>"
         "</div>",
         unsafe_allow_html=True
@@ -379,10 +380,11 @@ def render_ui():
                 status.update(label="✕ Investigation Encountered An Error", state="error")
 
         if error_msg:
+            error_html = html.escape(str(error_msg))
             st.markdown(f"""
             <div class="ss-section-box" style="border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.08);">
                 <div style="color: #f87171; font-weight: 700; font-size: 1rem; margin-bottom: 6px;">Investigation Error</div>
-                <div style="color: #cbd5e1; font-size: 0.88rem;">{error_msg}</div>
+                <div style="color: #cbd5e1; font-size: 0.88rem;">{error_html}</div>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -400,7 +402,7 @@ def render_ui():
                 bar_color = "linear-gradient(90deg, #10b981 0%, #f59e0b 100%)"
             else:
                 card_class = "ss-verdict-safe"
-                verdict_badge = "<span style='background: #10b981; color: white; padding: 4px 12px; border-radius: 6px; font-weight: 800; font-size: 0.85rem;'>🛡️ VERIFIED / SAFE</span>"
+                verdict_badge = "<span style='background: #10b981; color: white; padding: 4px 12px; border-radius: 6px; font-weight: 800; font-size: 0.85rem;'>🛡️ LOW RISK / NO STRONG SIGNALS</span>"
                 bar_color = "#10b981"
 
             st.markdown(f"""
@@ -418,12 +420,14 @@ def render_ui():
             """, unsafe_allow_html=True)
 
             col1, col2 = st.columns(2)
+            why_html = "<br>• ".join([""] + [html.escape(str(item)) for item in parsed["why"]]) if parsed["why"] else "No specific threat markers flagged."
+            actions_html = "<br>".join(html.escape(str(item)) for item in parsed["actions"]) if parsed["actions"] else "1. Verify sender through official app or statement."
             with col1:
                 st.markdown(f"""
                 <div class="ss-section-box">
                     <div class="ss-section-title">🔍 Evidence & Risk Signals (WHY)</div>
                     <div style="color: #e2e8f0; font-size: 0.88rem; line-height: 1.6;">
-                        {"<br>• ".join([""] + parsed['why']) if parsed['why'] else 'No specific threat markers flagged.'}
+                        {why_html}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -433,7 +437,7 @@ def render_ui():
                 <div class="ss-section-box">
                     <div class="ss-section-title">🛡️ Recommended Next Steps</div>
                     <div style="color: #e2e8f0; font-size: 0.88rem; line-height: 1.6;">
-                        {"<br>".join(parsed['actions']) if parsed['actions'] else '1. Verify sender through official app or statement.'}
+                        {actions_html}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)

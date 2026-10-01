@@ -44,6 +44,13 @@ class FallbackResilienceTests(unittest.TestCase):
             self.assertEqual(res["verdict"], "SCAM")
             self.assertGreaterEqual(res["risk_score"], 65)
 
+    def test_invalid_gemini_verdict_falls_back_instead_of_being_safe(self):
+        with patch("engine.run_gemini_agent", return_value="The message seems okay, but no verdict was formatted."):
+            res = investigate("Your account will be blocked. Verify KYC immediately.")
+
+        self.assertEqual(res["engine"], "heuristic_fallback")
+        self.assertEqual(res["verdict"], "SUSPICIOUS")
+
 
 if __name__ == "__main__":
     unittest.main()

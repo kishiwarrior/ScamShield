@@ -1,10 +1,13 @@
 """ScamShield REST API (FastAPI) for Hackathon Evaluation."""
+import logging
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
 from engine import investigate, MODEL
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="ScamShield API",
@@ -18,7 +21,6 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -31,7 +33,7 @@ class InvestigationRequest(BaseModel):
 
     @model_validator(mode="after")
     def check_text_or_message(self):
-        content = (self.text or self.message or "").strip()
+        content = (self.text or "").strip() or (self.message or "").strip()
         if not content:
             raise ValueError("Either 'text' or 'message' field must be provided and non-empty.")
         self.text = content
@@ -39,11 +41,11 @@ class InvestigationRequest(BaseModel):
 
 
 class EntitiesModel(BaseModel):
-    urls: List[str] = []
-    upi_ids: List[str] = []
-    phone_numbers: List[str] = []
-    amounts: List[str] = []
-    urgency_words: List[str] = []
+    urls: List[str] = Field(default_factory=list)
+    upi_ids: List[str] = Field(default_factory=list)
+    phone_numbers: List[str] = Field(default_factory=list)
+    amounts: List[str] = Field(default_factory=list)
+    urgency_words: List[str] = Field(default_factory=list)
 
 
 class InvestigationResponse(BaseModel):
@@ -138,9 +140,10 @@ def investigate_endpoint(req: InvestigationRequest):
             "raw_text": result.get("raw_text")
         }
     except Exception as exc:
+        logger.error("Investigation endpoint failed (%s)", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Investigation failed: {type(exc).__name__}: {str(exc)}"
+            detail="Investigation failed. Please retry."
         )
 
 

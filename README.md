@@ -17,9 +17,9 @@ Input Message
   │      ├─► check_upi_id: handle whitelist and fraudulent naming keywords
   │      └─► check_domain_reputation: optional VirusTotal hostname lookup
   │
-  └──► [Fallback Resilience Engine] (Zero-Downtime Guarantee)
+  └──► [Fallback Resilience Engine]
          └─► Activated automatically if Gemini API key is missing, network fails, or quota limit (429) is reached.
-             Runs all deterministic local threat heuristics, computes weighted risk score (0-100), and formats structured evidence.
+             Applies rule-based scoring and formats evidence; URL checks may still depend on network availability.
 ```
 
 ---
@@ -112,7 +112,7 @@ streamlit run app.py
 
 ## Run Test Suite
 
-Run all 15 automated unit tests across the security tools, fallback engine, and FastAPI endpoints:
+Run all 19 automated unit tests across the security tools, fallback engine, and FastAPI endpoints:
 
 ```powershell
 python -m unittest discover -s tests -v
@@ -124,8 +124,8 @@ python -m unittest discover -s tests -v
 
 - **Advisory Only**: ScamShield does not block accounts or submit complaints automatically. Review complaint text before submitting at [cybercrime.gov.in](https://cybercrime.gov.in/) or calling **1930**.
 - **SSRF Protection**: URL inspection uses `HEAD` requests only with strict timeouts. Private, localhost, and non-public IP destinations are blocked.
-- **Privacy First**: Gemini calls specify `store=False` to ensure zero interaction retention.
-- **Fail-Safe Design**: If an upstream AI provider is unreachable or rate limited, the built-in deterministic heuristic engine ensures users and API evaluators never experience an outage.
+- **Privacy**: Gemini calls use `store=False` to opt out of server-side interaction storage. This is not a zero-retention guarantee; Google's data handling terms still apply. Do not submit sensitive personal information.
+- **Fallback Design**: If Gemini is unavailable or rate limited, the heuristic engine can still provide an assessment. Network-based URL checks may be unavailable, and fallback does not guarantee uninterrupted service.
 
 ## Stack
 

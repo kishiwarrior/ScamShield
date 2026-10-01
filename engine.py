@@ -561,6 +561,8 @@ def investigate(user_text: str, ui=None, force_heuristic: bool = False) -> dict:
         if not raw_output or "Investigation stopped" in raw_output:
             raise RuntimeError("Gemini agent could not conclude investigation.")
         parsed = _parse_report(raw_output)
+        if parsed["verdict"] not in {"SCAM", "SUSPICIOUS", "SAFE"}:
+            raise ValueError("Gemini response did not contain a valid verdict.")
         entities = extract_entities(user_text)
         return {
             "verdict": parsed["verdict"],

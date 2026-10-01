@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
-from api import app
+from api import EntitiesModel, InvestigationRequest, app
 
 
 class ScamShieldApiTests(unittest.TestCase):
@@ -47,6 +48,25 @@ class ScamShieldApiTests(unittest.TestCase):
     def test_investigate_validation_error_on_empty_request(self):
         response = self.client.post("/api/v1/investigate", json={"text": "   "})
         self.assertEqual(response.status_code, 422)
+
+    def test_blank_text_falls_back_to_message(self):
+        request = InvestigationRequest(text="   ", message="Suspicious message")
+
+        self.assertEqual(request.text, "Suspicious message")
+
+    def test_entity_lists_are_independent(self):
+        first = EntitiesModel()
+        second = EntitiesModel()
+        first.urls.append("https://example.com")
+
+        self.assertEqual(second.urls, [])
+
+    def test_internal_exception_detail_is_not_returned(self):
+        with patch("api.investigate", side_effect=RuntimeError("internal service detail")):
+            response = self.client.post("/api/v1/investigate", json={"text": "example", "force_heuristic": True})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json()["detail"], "Investigation failed. Please retry.")
 
 
 if __name__ == "__main__":
